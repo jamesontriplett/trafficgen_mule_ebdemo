@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:tracking="http://www.mulesoft.org/schema/mule/ee/tracking" xmlns:batch="http://www.mulesoft.org/schema/mule/batch" xmlns:http="http://www.mulesoft.org/schema/mule/http" xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:spring="http://www.springframework.org/schema/beans" version="EE-3.5.2"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/http http://www.mulesoft.org/schema/mule/http/current/mule-http.xsd
+http://www.mulesoft.org/schema/mule/batch http://www.mulesoft.org/schema/mule/batch/current/mule-batch.xsd
+http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-current.xsd
+http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/tracking http://www.mulesoft.org/schema/mule/ee/tracking/current/mule-tracking-ee.xsd">
+    <queued-asynchronous-processing-strategy name="Queued_Asynchronous_Processing_Strategy" maxThreads="10" poolExhaustedAction="WAIT" doc:name="Queued Asynchronous Processing Strategy"/>
+    <batch:job name="beanstalk-rds-demoBatch1" max-failed-records="-1">
+        <batch:threading-profile poolExhaustedAction="WAIT" maxThreadsActive="500"/>
+        <batch:input>
+            <component class="com.mulesoft.CreateListOfZips" doc:name="Java"/>
+            <logger message="Array Created of size: #[payload.size()]" level="INFO" doc:name="Logger"/>
+        </batch:input>
+        <batch:process-records>
+            <batch:step name="Batch_Step">
+                <logger message="Postal: #[payload]" level="INFO" doc:name="Logger"/>
+                <http:outbound-endpoint exchange-pattern="request-response" host="#[sessionVars['target']]" port="80" path="?cond=#[payload]" method="GET" doc:name="HTTP"/>
+            </batch:step>
+        </batch:process-records>
+        <batch:on-complete>
+            <logger message="Total Records: #[payload.totalRecords]+ Successful: #[payload.successfulRecords]" level="INFO" doc:name="Logger"/>
+        </batch:on-complete>
+    </batch:job>
+    <flow name="beanstalk-rds-demoFlow1" doc:name="beanstalk-rds-demoFlow1">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="${http.port}" doc:name="HTTP"/>
+        <parse-template location="index.html" doc:name="Parse Template"/>
+        <http:response-builder contentType="text/html" doc:name="HTTP Response Builder"/>
+    </flow>
+    <flow name="beanstalk-rds-demoFlow2" doc:name="beanstalk-rds-demoFlow2">
+        <http:inbound-endpoint exchange-pattern="request-response" host="localhost" port="8081" path="send" doc:name="HTTP"/>
+        <set-payload value="#[message.inboundProperties['hits'].trim()]" doc:name="Set Payload"/>
+        <set-session-variable variableName="target" value="#[message.inboundProperties['target']]" doc:name="Session Variable"/>
+        <set-session-variable variableName="hits" value="#[message.inboundProperties['hits'].trim()]" doc:name="Session Variable"/>
+        <logger message="Records Requested: '#[payload]'" level="INFO" doc:name="Logger"/>
+        <async doc:name="Async">
+            <batch:execute name="beanstalk-rds-demoBatch1" doc:name="Batch Execute"/>
+        </async>
+        <set-payload value="Sent: #[sessionVars.hits] hits to #[sessionVars.target] " doc:name="Set Payload"/>
+    </flow>
+</mule>
